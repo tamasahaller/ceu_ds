@@ -1,0 +1,589 @@
+---
+title: "Data Science Term Project"
+author: "Tamas Haller"
+date: '2017 március 19 '
+output: html_document
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Project Subject
+Almost everyone asket themselves at least once the following question: *What influences love at first site?*. In order to get some insights I downloaded a Speed dateing dataset from kaggle. 
+
+The dataset was created by Columbia Business School professors for their paper *Gender Differences in Mate Selection: Evidence From a Speed Dating Experiment*.
+
+The data in the dataset was collected from a participants of multiple experimental speed datingevents. The speed dating experiment setup was the following:
+
+* 4 minute conversation with a participant of opposite sex
+* Complete a questionare about the "first date"
+    + Would she/he like to see the date again?
+    + Rate their date on six attributes: Attractiveness, Sincerity, Intelligence, Fun, Ambition, and Shared Interests
+* Swich partners
+* Continue the previous steps until all the participants met
+
+From the above dataset based on the provided variable I would like to predict if there would or would not be a match between two persons. There is a match is both persons answered that they would like to see each other again. Hopefully the analysis will also uncover what are the most desirable attributes in the opposite partner.  
+
+## Data Source
+I find the data under the following kaggle page: <https://www.kaggle.com/annavictoria/speed-dating-experiment>. The csv file itself could be downloaded from the following link: <http://www.stat.columbia.edu/~gelman/arm/examples/speed.dating/>
+```{r speeddating, warning=FALSE, message=FALSE}
+# LIBRARIES
+library(arm)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(pastecs)
+library(DataCombine)
+library(descr)
+library(stargazer)
+library(sandwich)
+library(lmtest)
+library(splines)
+library(readr)
+library(mfx)
+library(descr)
+library(pander)
+library(pROC)
+library(data.table)
+library(rpart)
+library(partykit)
+library(class)
+library(caret)
+
+
+# CLEAR MEMORY
+rm(list = ls())
+
+# CKECK  WORKING DIRECTORY
+getwd()
+setwd("C:\\Users\\IBM_ADMIN\\Desktop")
+
+# LOAD  DATA
+sdd <- read.csv("Speed Dating Data.csv")
+```
+
+## Data at first sight
+
+After checking the data at first sight and reading it's description (which can be found at <http://www.stat.columbia.edu/~gelman/arm/examples/speed.dating/Speed%20Dating%20Data%20Key.doc>) we can see that it contains 8378 observations and 195 variables.
+
+```{r check}
+pander(colnames(sdd))
+```
+
+## Data cleaning
+
+As a first step of data cleaning we will remove some of columns (variables) that are irrelevant from the perspective of our project and/or are not described by the documentation.
+
+```{r datacleaning, echo=FALSE}
+sdd <- sdd[,c(1:69)]
+
+sdd$iid<-NULL
+sdd$id<-NULL
+sdd$idg<-NULL
+sdd$condtn<-NULL
+sdd$wave<-NULL
+sdd$round<-NULL
+sdd$position<-NULL
+sdd$positin1<-NULL
+sdd$order<-NULL
+sdd$partner<-NULL
+sdd$pid<-NULL
+sdd$undergra<-NULL
+sdd$mn_sat<-NULL
+sdd$tuition<-NULL
+sdd$zipcode<-NULL
+sdd$career_c<-NULL
+sdd$career<-NULL
+sdd$expnum<-NULL
+sdd$from<-NULL
+sdd$field<-NULL
+
+sdd <- sdd[,c(1:28,49)]
+
+sdd$race<-NULL
+sdd$race_o<-NULL
+
+sdd<-sdd[,c(1:5,12:27)]
+
+sdd$like_o<-NULL
+sdd$prob_o<-NULL
+sdd$met_o<-NULL
+sdd$income<-NULL
+
+sdd$match1<-sdd$match
+sdd$match<-NULL
+sdd$match<-sdd$match1
+sdd$match1<-NULL
+
+```
+
+After deleting majority of the columns we have 17 most importatnt variables remaining, which we will use for prediction. 
+
+```{r vars}
+pander(colnames(sdd))
+```
+
+See the first few rows of the dataset in the following table:
+
+```{r head}
+sdd <- na.omit(sdd)
+```
+
+As a last step I will omit rows with NA values and this will left us with 6838 observations and a clean dataset.
+
+```{r omit}
+pander(head(sdd))
+```
+
+## Description of the final variables
+
+### gender 
+Binary variable for gender, (Female=0,Male=1)
+
+```{r gender}
+pander(summary(sdd$gender))
+qplot(sdd$gender, geom="histogram")
+```
+
+### match 
+Binary variable which indicates if there was a match or not (1=yes, 0=no). This is the variable that we are going to predict
+
+```{r match}
+pander(summary(sdd$match))
+qplot(sdd$match, geom="histogram")
+```
+
+###int_corr 
+Correlation between participant’s and partner’s ratings of interests
+
+```{r int_corr}
+pander(summary(sdd$int_corr))
+qplot(sdd$int_corr, geom="histogram")
+```
+
+### samerace 
+Participant and the partner were the same race. (1= yes, 0=no)
+
+```{r samerace}
+pander(summary(sdd$samerace))
+qplot(sdd$samerace, geom="histogram")
+```
+
+### age_o 
+age of partner in years
+
+```{r age_o}
+pander(summary(sdd$age_o))
+qplot(sdd$age_o, geom="histogram", binwidth=1)
+```
+
+### dec_o 
+Decision of partner the night of event (1=yes, 0=no)
+
+```{r dec_o}
+pander(summary(sdd$dec_o))
+qplot(sdd$dec_o, geom="histogram")
+```
+
+
+### attr_o, sinc_o, intel_o, fun_o, amb_o, shar_o
+Rating by partner the night of the event, for all 6 attributes (Attractiveness, Sincerity, Intelligence, Fun, Ambition, and Shared Interests)
+
+```{r attr}
+pander(summary(sdd$attr_o))
+pander(summary(sdd$sinc_o))
+pander(summary(sdd$intel_o))
+pander(summary(sdd$fun_o))
+pander(summary(sdd$amb_o))
+pander(summary(sdd$shar_o))
+```
+
+### age 
+Age of the person in years
+```{r age}
+pander(summary(sdd$age))
+qplot(sdd$age, geom="histogram", binwidth=1)
+```
+
+### field_cd 
+Field of study coded:
+
+1. Law  
+2. Math
+3. Social Science, Psychologist 
+4. Medical Science, Pharmaceuticals, and Bio Tech 
+5. Engineering  
+6. English/Creative Writing/ Journalism 
+7. History/Religion/Philosophy 
+8. Business/Econ/Finance 
+9. Education, Academia 
+10. Biological Sciences/Chemistry/Physics
+11. Social Work 
+12. Undergrad/undecided 
+13. Political Science/International Affairs 
+14. Film
+15. Fine Arts/Arts Administration
+16. Languages
+17. Architecture
+18. Other
+
+```{r field_cd}
+pander(summary(sdd$field_cd))
+qplot(sdd$field_cd, geom="histogram", binwidth=1)
+```
+
+### imprace
+How important is it to the person (on a scale of 1-10) that the partner you date be of the same racial/ethnic background?
+
+```{r imprace}
+pander(summary(sdd$imprace))
+qplot(sdd$imprace, geom="histogram", binwidth=1)
+```
+
+
+### imprelig
+How important is it to the person (on a scale of 1-10) that the partner you date be of the same religious background?
+
+```{r imprelig}
+pander(summary(sdd$imprelig))
+qplot(sdd$imprelig, geom="histogram", binwidth=1)
+```
+
+### exphappy
+Overall, on a scale of 1-10, how happy the person expect to be with the people she/he meet 
+during the speed-dating event?
+
+```{r exphappy}
+pander(summary(sdd$exphappy))
+qplot(sdd$exphappy, geom="histogram", binwidth=1)
+
+```
+
+## Few regressions, checking correlations between variables based on survey data
+
+### Exhappy - on age
+Older persons expects to be more happy with the partner met on the speed date 
+```{r eona, warning=FALSE}
+ggplot(data = sdd, aes(x=age, y=exphappy)) +
+  geom_point(size=1.5, colour="orange") +
+  geom_smooth(method="lm", colour="darkgreen") 
+```
+
+### Race importance - on age
+Importance of the partner to be the same race is becoming less and less with age
+```{r ageonimprace, warning=FALSE}
+ggplot(data = sdd, aes(x=age, y=imprace)) +
+  geom_point(size=1.5, colour="orange") +
+  geom_smooth(method="lm", colour="darkgreen") 
+```
+
+### Race importance - on religion importance
+For persons where the it is more important that the partner is of same religious background it is more importat that they are of same racial background
+```{r raceonreligion, warning=FALSE}
+ggplot(data = sdd, aes(x=imprelig, y=imprace)) +
+  geom_point(size=1.5, colour="orange") +
+  geom_smooth(method="lm", colour="darkgreen") 
+```
+
+### Attractiveness on intelligence
+More intelligent persons are more attaractive on average
+```{r attronintel, warning=FALSE}
+ggplot(data = sdd, aes(x=intel_o, y=attr_o)) +
+  geom_point(size=1.5, colour="orange") +
+  geom_smooth(method="lm", colour="darkgreen") 
+```
+
+### Ambition on intelligence
+More ambitious persons are more intelligent on average
+```{r ambonintel, warning=FALSE}
+ggplot(data = sdd, aes(x=amb_o, y=intel_o)) +
+  geom_point(size=1.5, colour="orange") +
+  geom_smooth(method="lm", colour="darkgreen") 
+```
+
+## Creating train and test datasets
+For modelling I will create Train and Test datasets. The datasets will be created with randomly choosing observations in the following breakdown:
+
+* Train dataset - 50% of data, used for training the models
+* Test dataset - 50% of data, used for model evaluation
+
+```{r traintest, warning=FALSE}
+sdd <- data.table(sdd)
+sdd[, rnd := runif(6838)]
+setorder(sdd, rnd)
+sdd
+sdd[, rnd := NULL]
+
+sdd <- na.omit(sdd)
+
+train <- sdd[1:3419]
+test  <- sdd[3420:6838]
+
+```
+
+## Modelling
+
+During the modelling I will try to predict if there will be a match or not based on 16 variables.
+First I will start with 2 simple models in R:
+
+* K-nearest neighbours - where K=10,15,30
+* Decision tree
+
+Then I will predict matches with H2o using the following algorithms:
+
+* Random Forest - with different setups
+* GBM - with different setups
+
+### KNN
+
+#### 10NN
+```{r 10nn, warning=FALSE}
+
+for (v in c('gender', 'match', 'samerace', 'dec_o', 'field_cd')) {
+    set(sdd, j = v, value = as.factor(sdd[, get(v)]))
+}
+
+res <- knn(train[, 1:16, with = FALSE], test[, 1:16, with = FALSE], train$match, k = 10)
+pander(table(test$match, res))
+auc(res,test$match)
+plot.roc(res, test$match, main="10NN ROC", percent=TRUE, ci=TRUE, print.auc=TRUE)
+
+```
+
+#### 15NN
+```{r 15nn, warning=FALSE}
+res2 <- knn(train[, 1:16, with = FALSE], test[, 1:16, with = FALSE], train$match, k = 15)
+pander(table(test$match, res2))
+auc(res2,test$match)
+plot.roc(res2, test$match, main="15NN ROC", percent=TRUE, ci=TRUE, print.auc=TRUE)
+
+```
+
+#### 30NN
+```{r 30nn, warning=FALSE}
+res3 <- knn(train[, 1:16, with = FALSE], test[, 1:16, with = FALSE], train$match, k = 30)
+pander(table(test$match, res3))
+auc(res3,test$match)
+plot.roc(res3, test$match, main="30NN ROC", percent=TRUE, ci=TRUE, print.auc=TRUE)
+
+```
+
+### Decision Tree
+
+#### DT1
+First decision tree calculated with dec_o variable. This variable shows the decision of the partner so it is logical that it will be na important precitor 
+```{r dt, warning=FALSE}
+
+for (v in c('gender', 'match', 'samerace', 'dec_o', 'field_cd')) {
+    set(train, j = v, value = as.factor(train[, get(v)]))
+}
+
+for (v in c('gender', 'match', 'samerace', 'dec_o', 'field_cd')) {
+    set(test, j = v, value = as.factor(test[, get(v)]))
+}
+
+ct <- rpart(match ~ ., data = train)
+summary(ct)
+
+
+plot(as.party(ct))
+
+res4 <- predict(ct, newdata = test, type = 'class')
+
+pander(table(test$match, res4))
+auc(res4,as.numeric(test$match))
+plot.roc(res4,as.numeric(test$match), main="DT1", percent=TRUE, ci=TRUE, print.auc=TRUE)
+
+```
+ 
+#### DT2
+Second tree was built without dec_o variable to see which other variables are important if we don't know the decision of the partner
+```{r dt2, warning=FALSE, eval=FALSE}
+
+train1<-data.table(train)
+train1$dec_o<-NULL
+
+test1<-data.table(test)
+test1$dec_o<-NULL
+
+
+ct1 <- rpart(match ~ ., data = train1)
+summary(ct1)
+
+
+plot(as.party(ct1))
+
+res5 <- predict(ct1, newdata = test1, type = 'class')
+
+pander(table(test1$match, res5))
+auc(res5,as.numeric(test1$match))
+plot.roc(res5, as.numeric(test1$match), main="DT2", percent=TRUE, ci=TRUE, print.auc=TRUE)
+
+```
+
+## H2O setup for modelling
+
+I used R and H2O for modelling purposes. Before start of the H2O modelling I need to setup the H2O environment as well as to convert some of the variables to factors.
+
+```{r h2osetup, warning=FALSE}
+library(h2o)
+localH2O = h2o.init()
+
+h_train <- as.h2o(train)
+h_test <- as.h2o(test)
+```
+
+### Random Forest
+
+#### RF1
+Setup is: Number of trees=500 and Maximal depth = 10
+```{r rf1, warning=FALSE, message=FALSE}
+{
+  res_rf1 <- h2o.randomForest(x = c(1:16), 
+                            y = "match", 
+                            training_frame = h_train, 
+                            mtries = -1, 
+                            ntrees = 500, 
+                            max_depth = 10, 
+                            nbins = 20)
+}
+
+res_rf1
+
+h2o.auc(res_rf1)
+
+h2o.auc(h2o.performance(res_rf1, h_test))
+```
+
+#### RF2
+Setup is: Number of trees=500 and Maximal depth = 15
+```{r rf2, warning=FALSE, message=FALSE}
+{
+  res_rf2 <- h2o.randomForest(x = c(1:16), 
+                            y = "match", 
+                            training_frame = h_train, 
+                            mtries = -1, 
+                            ntrees = 500, 
+                            max_depth = 15, 
+                            nbins = 20)
+}
+
+res_rf2
+
+h2o.auc(res_rf2)
+
+h2o.auc(h2o.performance(res_rf2, h_test))
+```
+
+#### RF3
+Setup is: Number of trees=1000 and Maximal depth = 15
+```{r rf23, warning=FALSE, message=FALSE}
+{
+  res_rf3 <- h2o.randomForest(x = c(1:16), 
+                            y = "match", 
+                            training_frame = h_train, 
+                            mtries = -1, 
+                            ntrees = 1000, 
+                            max_depth = 15, 
+                            nbins = 20)
+}
+
+res_rf3
+
+h2o.auc(res_rf3)
+
+h2o.auc(h2o.performance(res_rf3, h_test))
+```
+
+### GBM
+
+#### GBM1
+Setup is: Number of trees=100 and Maximal depth = 10
+```{r gbm1, warning=FALSE, message=FALSE}
+{
+  res_gbm1 <- h2o.gbm(x = c(1:16), 
+                    y = "match", 
+                    training_frame = h_train, 
+                    ntrees = 100, 
+                    max_depth = 10, 
+                    learn_rate = 0.01) 
+}
+
+res_gbm1
+
+h2o.auc(res_gbm1)
+
+h2o.auc(h2o.performance(res_gbm1, h_test))
+```
+
+#### GBM2
+Setup is: Number of trees=500 and Maximal depth = 15
+```{r gmb2, warning=FALSE, message=FALSE}
+{
+  res_gbm2 <- h2o.gbm(x = c(1:16), 
+                    y = "match", 
+                    training_frame = h_train, 
+                    ntrees = 500, 
+                    max_depth = 15, 
+                    learn_rate = 0.01) 
+}
+
+res_gbm2
+
+h2o.auc(res_gbm2)
+
+h2o.auc(h2o.performance(res_gbm2, h_test))
+```
+
+#### GBM3
+Setup is: Number of trees=1000 and Maximal depth = 15
+```{r gmb3, warning=FALSE, message=FALSE}
+{
+  res_gbm3 <- h2o.gbm(x = c(1:16), 
+                    y = "match", 
+                    training_frame = h_train, 
+                    ntrees = 1000, 
+                    max_depth = 15, 
+                    learn_rate = 0.01) 
+}
+
+res_gbm3
+h2o.auc(res_gbm3)
+h2o.auc(h2o.performance(res_gbm3, h_test))
+```
+
+## Model analysis
+
+* With KNN:
+    + 10NN: AUC = 0.6734
+    + 15NN: AUC = 0.7068
+    + 30NN: AUC = 0.7522
+
+Among KNN the best performing model is where K = 30. It is the modell with highest complexity amongst KNN models tested. Computing time for all of the models was pretty fast.
+
+* With DT: AUC = 0.7042
+
+From the DT we can see that the dec_o predictor was the most important one which is logical since this variable indicates the decision of the partner. The second two important predictors where if they share lots of interests and if the person was funny, which is also logical if take into account that this was a speed date experiment where the people had only 4 minutes to get to know each other and to decide.
+
+```{r varimp, warning=FALSE}
+pander(varImp(ct))
+```
+
+* With RF:
+    + RF1: AUC = 0.8928632
+    + RF2: AUC = 0.8947308
+    + RF3: AUC = 0.8942053
+
+The best performing RF model was the one with 500 trees and maximal depth of 15 (RF2). This was the middle comlexity model and it had the middle computation time amongst the random forest models. We can see from the AUC that the RF3 model is already overfitted a bit compated to RF2. The computation time of all RF models was more than in case of decision tree and KNN models.
+
+* With GBM:
+    + GBM1: AUC = 0.8822697
+    + GBM2: AUC = 0.8888288
+    + GBM3: AUC = 0.8884344
+
+The best performing GBM model was the one with 500 trees and maximal depth of 15 (GBM2). The complexity and computation time was growing from first model to third. The third model has weaker performance from the second so it is overfitted a bit. The GBM models had the highest computation time from all of the models.
+
+## Model selection
+
+The best peroforming model from the models above was the RF2 random forest model with 500 trees and 15 depth. 
