@@ -157,7 +157,7 @@ qplot(sdd$match, geom="histogram")
 ```
 
 ###int_corr 
-Correlation between participants€™s and partners€™s ratings of interests
+Correlation between participantsâ‚¬â„¢s and partnersâ‚¬â„¢s ratings of interests
 
 ```{r int_corr}
 pander(summary(sdd$int_corr))
